@@ -8,7 +8,7 @@
 # for arm64 on an x64 host).
 #
 # Requirements:
-#   - Android NDK 28.2.13676358 installed (default; override via -NdkRoot)
+#   - Android NDK 27.2.12479018 installed (default; override via -NdkRoot)
 #   - CMake 3.8+ on PATH
 #   - Ninja somewhere on disk (auto-detected from Android Studio's CMake
 #     bundle or Visual Studio's CMake tools; doesn't have to be on PATH)
@@ -21,7 +21,7 @@
 [CmdletBinding()]
 param(
     [string]$NdkRoot,
-    [string]$NdkVersion = "28.2.13676358",
+    [string]$NdkVersion = "27.2.12479018",
     [int]$AndroidApi    = 30,
     [string]$AndroidAbi = "arm64-v8a",
     [string]$AndroidStl = "c++_static"
@@ -181,21 +181,29 @@ if (Test-Path $BuildDir) {
 # Configure
 # ---------------------------------------------------------------------------
 Write-Host "Configuring..." -ForegroundColor Yellow
-& cmake -S $VendorDir -B $BuildDir `
-    -G "Ninja" `
-    -DCMAKE_MAKE_PROGRAM="$NinjaExe" `
-    -DCMAKE_TOOLCHAIN_FILE=$ToolchainFile `
-    -DANDROID_ABI=$AndroidAbi `
-    -DANDROID_PLATFORM=android-$AndroidApi `
-    -DANDROID_STL=$AndroidStl `
-    -DCMAKE_BUILD_TYPE=Release `
-    -DBUILD_SHARED_LIBS=ON `
-    -DUSE_MBROLA=OFF `
-    -DUSE_LIBSONIC=OFF `
-    -DUSE_LIBPCAUDIO=OFF `
-    -DUSE_ASYNC=OFF `
-    -DESPEAK_COMPAT=OFF `
-    -DBUILD_TESTING=OFF
+
+# Build the cmake argument list explicitly so PowerShell's parser doesn't
+# mangle `=$Var` constructs across backtick continuations. Each -D flag is a
+# single argument string we control precisely.
+$cmakeArgs = @(
+    "-S", $VendorDir,
+    "-B", $BuildDir,
+    "-G", "Ninja",
+    "-DCMAKE_MAKE_PROGRAM=$NinjaExe",
+    "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile",
+    "-DANDROID_ABI=$AndroidAbi",
+    "-DANDROID_PLATFORM=android-$AndroidApi",
+    "-DANDROID_STL=$AndroidStl",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DBUILD_SHARED_LIBS=ON",
+    "-DUSE_MBROLA=OFF",
+    "-DUSE_LIBSONIC=OFF",
+    "-DUSE_LIBPCAUDIO=OFF",
+    "-DUSE_ASYNC=OFF",
+    "-DESPEAK_COMPAT=OFF",
+    "-DBUILD_TESTING=OFF"
+)
+& cmake @cmakeArgs
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
 # ---------------------------------------------------------------------------
