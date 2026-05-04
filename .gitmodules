@@ -1,0 +1,3 @@
+[submodule "EspeakNG/vendor"]
+	path = EspeakNG/vendor
+	url = https://github.com/espeak-ng/espeak-ng
