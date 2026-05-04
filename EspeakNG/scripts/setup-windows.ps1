@@ -12,8 +12,8 @@
 # Outputs:
 #   Source/ThirdParty/Win64/espeak-ng.dll
 #   Source/ThirdParty/Win64/espeak-ng.lib
-#   Source/ThirdParty/include/espeak-ng/*.h
-#   Source/ThirdParty/Public/espeak-ng-data/
+#   Source/ThirdParty/Win64/espeak-ng-data/
+#   Source/ThirdParty/Public/espeak-ng/*.h
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -28,8 +28,8 @@ $BuildDir      = Join-Path $VendorDir "build-win64"
 $ThirdPartyDir = Resolve-Path "$EspeakNGDir/../Source/ThirdParty"
 
 $Win64OutDir   = Join-Path $ThirdPartyDir "Win64"
-$IncludeOutDir = Join-Path $ThirdPartyDir "include/espeak-ng"
-$DataOutDir    = Join-Path $ThirdPartyDir "Public/espeak-ng-data"
+$HeadersOutDir = Join-Path $ThirdPartyDir "Public/espeak-ng"
+$DataOutDir    = Join-Path $ThirdPartyDir "Win64/espeak-ng-data"
 
 Write-Host "espeak-ng 1.52.0 Win64 build" -ForegroundColor Cyan
 Write-Host "  Vendor:       $VendorDir"
@@ -101,15 +101,14 @@ if (-not (Test-Path $BuiltDataDir)) {
 
 # Make destination dirs
 New-Item -ItemType Directory -Force -Path $Win64OutDir   | Out-Null
-New-Item -ItemType Directory -Force -Path $IncludeOutDir | Out-Null
-New-Item -ItemType Directory -Force -Path (Split-Path $DataOutDir -Parent) | Out-Null
+New-Item -ItemType Directory -Force -Path $HeadersOutDir | Out-Null
 
 # Copy DLL + import lib
 Copy-Item $Dll.FullName -Destination $Win64OutDir -Force
 Copy-Item $Lib.FullName -Destination $Win64OutDir -Force
 
 # Copy public headers from the source tree
-Copy-Item "$VendorDir/src/include/espeak-ng/*.h" -Destination $IncludeOutDir -Force
+Copy-Item "$VendorDir/src/include/espeak-ng/*.h" -Destination $HeadersOutDir -Force
 
 # Replace any pre-existing staged data folder with the freshly compiled one
 if (Test-Path $DataOutDir) {
@@ -123,5 +122,5 @@ Copy-Item -Recurse $BuiltDataDir -Destination $DataOutDir -Force
 Write-Host "`nDone." -ForegroundColor Green
 Write-Host "  DLL:     $Win64OutDir\espeak-ng.dll"
 Write-Host "  LIB:     $Win64OutDir\espeak-ng.lib"
-Write-Host "  Headers: $IncludeOutDir\"
+Write-Host "  Headers: $HeadersOutDir\"
 Write-Host "  Data:    $DataOutDir\"
