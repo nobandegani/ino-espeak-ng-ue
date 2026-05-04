@@ -7,7 +7,7 @@
 #include "InoSpeakNGBPLibrary.generated.h"
 
 UCLASS()
-class UInoSpeakNGBPLibrary : public UBlueprintFunctionLibrary
+class INOSPEAKNG_API UInoSpeakNGBPLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 
