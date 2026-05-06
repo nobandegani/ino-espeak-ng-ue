@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+
+InoSpeakNG — Unreal Plugin Language (UPL) file for Android APK packaging
+of espeak-ng.
+
+Referenced from InoSpeakNG.Build.cs via
+    AdditionalPropertiesForReceipt.Add("AndroidPlugin", "<this file>")
+
+Two concerns handled here, matching the proven pattern from the
+sibling InoLiteRT and InoOnnx plugins' UPL files:
+
+  1. Java-side loadLibrary: emit System.loadLibrary("espeak-ng") in
+     the generated GameActivity Java so the .so is resident before
+     libUnreal.so runs and consumer modules try to call espeak_*
+     symbols.
+
+  2. APK staging: copy libespeak-ng.so from the plugin's
+     Source/ThirdParty/Android/<arch>/ into the APK's lib/<arch>/
+     directory so Android's dynamic linker finds it.
+
+Both are required. RuntimeDependencies in Build.cs alone does NOT stage
+a .so into lib/<arch>/ of the APK — explicit <copyFile> in
+<resourceCopies> is what gets it there.
+
+The espeak-ng-data tree (~3 MB of phoneme dictionaries / voice tables)
+is NOT staged here — UPL <copyFile> places files into the APK's
+assets/, which espeak-ng's raw fopen() can't read. Instead the data
+goes in via Build.cs RuntimeDependencies (UFS/pak), and on first run
+FInoSpeakNGModule extracts it to FPaths::ProjectPersistentDownloadDir()
+so espeak_Initialize can fopen() it as regular files. See
+InoSpeakNG.cpp's ExtractEspeakDataIfNeeded.
+
+Path variable gotchas (lessons from sibling plugins' UPLs):
+
+  $S(AbsPluginDir)  — resolves to THIS MODULE's directory:
+                       Plugins/InoSpeakNG/Source/InoSpeakNG/
+                       (despite the "Plugin" in the name).
+  $S(PluginDir)     — does NOT exist as a UPL variable; using it
+                       silently produces "" and breaks copies. Always
+                       use $S(AbsPluginDir).
+  $S(BuildDir)      — Intermediate/Android/<arch>/gradle/app/src/main/
+  $S(Architecture)  — arm64-v8a or x86_64.
+
+Our .so files live at
+    Plugins/InoSpeakNG/Source/ThirdParty/Android/<arch>/libespeak-ng.so
+which is one dir up + over from $S(AbsPluginDir).
+
+We support both arm64-v8a and x86_64. UPL is processed once per
+architecture; bSupported is set per-arch via <isArch>, so the
+<copyFile> directive only runs for arches we actually built a .so for.
+
+If you only built one arch (e.g. arm64-v8a but not x86_64), the
+bSupported gating still runs <copyFile> for the arch UE is currently
+packaging. Building x86_64 separately:
+    cd Plugins/InoSpeakNG/EspeakNG/scripts
+    ./setup-android.ps1 -AndroidAbi x86_64
+
+Docs: https://docs.unrealengine.com/en-US/Sharing/Reference/UnrealPluginLanguage/
+
+-->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+
+	<!-- File trace for debugging: UE logs a line whenever this UPL is
+	     processed. Useful for confirming the packager picked it up. -->
+	<trace enable="true"/>
+
+	<!--
+	init: runs once per architecture. Gate the copy on architecture so
+	we don't try to copy x86_64 binaries into an arm64-v8a build dir.
+	Matches the stock UE UPL pattern.
+	-->
+	<init>
+		<log text="InoSpeakNG UPL init"/>
+		<setBool result="bSupported" value="false"/>
+		<isArch arch="arm64-v8a">
+			<setBool result="bSupported" value="true"/>
+		</isArch>
+		<isArch arch="x86_64">
+			<setBool result="bSupported" value="true"/>
+		</isArch>
+		<if condition="bSupported">
+			<false>
+				<log text="InoSpeakNG: unsupported architecture $S(Architecture), skipping native lib staging"/>
+			</false>
+		</if>
+	</init>
+
+	<!--
+	soLoadLibrary: emit System.loadLibrary("espeak-ng") in the Java
+	launcher activity so libespeak-ng.so is resident before
+	FInoSpeakNGModule::StartupModule's espeak_Initialize call runs.
+
+	The Build.cs adds the .so via PublicAdditionalLibraries, which
+	gives libUnreal.so a DT_NEEDED on libespeak-ng.so — so technically
+	the dynamic linker would load it automatically. We still include
+	the explicit soLoadLibrary preload so a load failure surfaces as
+	a Java UnsatisfiedLinkError (with our failmsg) rather than a
+	silent native abort during libUnreal.so init.
+
+	Java's System.loadLibrary("foo") looks up "libfoo.so" in
+	lib/<arch>/ — so the Java-side name is "espeak-ng" (without the
+	"lib" prefix and ".so" suffix).
+	-->
+	<soLoadLibrary>
+		<loadLibrary name="espeak-ng" failmsg="Failed to load libespeak-ng.so — ensure EspeakNG/scripts/setup-android.ps1 has been run for this architecture and the APK re-packaged."/>
+	</soLoadLibrary>
+
+	<!--
+	resourceCopies: copy libespeak-ng.so into the APK's
+	lib/$S(Architecture)/ directory. UE's APK packager then ships
+	one libs/ subfolder per arch, and the install step on device
+	picks the matching arch.
+
+	The src path uses $S(Architecture) so the same UPL works for
+	both arm64-v8a and x86_64 packaging passes — UPL re-runs once
+	per arch, $S(Architecture) substitutes accordingly, and the
+	matching .so under Source/ThirdParty/Android/<arch>/ is picked.
+
+	The <log> line prints to the packaging log so we can verify
+	the copy actually ran. Look for "InoSpeakNG: copied libespeak-ng.so"
+	in the output.
+	-->
+	<resourceCopies>
+		<if condition="bSupported">
+			<true>
+				<copyFile
+					src="$S(AbsPluginDir)/../ThirdParty/Android/$S(Architecture)/libespeak-ng.so"
+					dst="$S(BuildDir)/libs/$S(Architecture)/libespeak-ng.so"/>
+				<log text="InoSpeakNG: copied libespeak-ng.so for $S(Architecture)"/>
+			</true>
+		</if>
+	</resourceCopies>
+
+</root>

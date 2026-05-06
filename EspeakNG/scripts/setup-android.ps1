@@ -1,22 +1,32 @@
 # setup-android.ps1
 #
-# Cross-compiles libespeak-ng.so for Android arm64-v8a from the vendored
-# source via the Android NDK and stages the artifact into Source/ThirdParty/.
-# Also copies the platform-agnostic espeak-ng-data/ from the Win64 build
-# (must run setup-windows.ps1 first — the data is compiled by running
-# espeak-ng-bin at build time and that can't be done while cross-compiling
-# for arm64 on an x64 host).
+# Cross-compiles libespeak-ng.so for Android (arm64-v8a or x86_64) from
+# the vendored source via the Android NDK and stages the artifact into
+# Source/ThirdParty/.
+#
+# Run once per architecture you want to ship:
+#     ./setup-android.ps1                    # default: arm64-v8a
+#     ./setup-android.ps1 -AndroidAbi x86_64 # for emulators / x86 Chromebooks
+#
+# The platform-agnostic espeak-ng-data/ is copied once from the Win64
+# build to the SHARED Source/ThirdParty/Android/espeak-ng-data/ location
+# (no arch subdir — same files work for every Android arch). setup-
+# windows.ps1 must have run at least once first; the data tables are
+# compiled by running espeak-ng-bin at host build time, and that can't
+# be done while cross-compiling for Android.
 #
 # Requirements:
-#   - Android NDK 27.2.12479018 installed (default; override via -NdkRoot)
+#   - Android NDK 27.2.12479018 installed (default; override via -NdkRoot
+#     or -NdkVersion). This pin matches the project's documented NDK and
+#     produces .so files compatible with API 30+.
 #   - CMake 3.8+ on PATH
 #   - Ninja somewhere on disk (auto-detected from Android Studio's CMake
 #     bundle or Visual Studio's CMake tools; doesn't have to be on PATH)
 #   - setup-windows.ps1 has been run at least once (provides espeak-ng-data/)
 #
 # Outputs:
-#   Source/ThirdParty/Android/arm64-v8a/libespeak-ng.so
-#   Source/ThirdParty/Android/arm64-v8a/espeak-ng-data/
+#   Source/ThirdParty/Android/<arch>/libespeak-ng.so   (arch-specific)
+#   Source/ThirdParty/Android/espeak-ng-data/          (shared, copied once)
 
 [CmdletBinding()]
 param(
@@ -41,7 +51,12 @@ $ThirdPartyDir = Resolve-Path "$EspeakNGDir/../Source/ThirdParty"
 
 $AndroidOutDir   = Join-Path $ThirdPartyDir "Android/$AndroidAbi"
 $Win64DataDir    = Join-Path $ThirdPartyDir "Win64/espeak-ng-data"
-$AndroidDataDir  = Join-Path $AndroidOutDir "espeak-ng-data"
+# espeak-ng-data is platform-agnostic — same dictionaries / phoneme tables
+# work for every Android arch. We stage it ONCE at a shared location
+# (Android/espeak-ng-data/, no arch subdir) so a multi-arch build doesn't
+# duplicate ~3 MB of data per arch in the APK staging tree. Build.cs and
+# the runtime extractor both read from this shared path.
+$AndroidDataDir  = Join-Path $ThirdPartyDir "Android/espeak-ng-data"
 
 Write-Host "espeak-ng 1.52.0 Android $AndroidAbi build" -ForegroundColor Cyan
 Write-Host "  Vendor:       $VendorDir"
