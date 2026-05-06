@@ -105,7 +105,7 @@ namespace
 
 		const FString DstParent = FPaths::Combine(
 			FPaths::ProjectPersistentDownloadDir(),
-			TEXT("InoSpeakNG"));
+			TEXT("ino-speak-ng"));
 		const FString DstData  = FPaths::Combine(DstParent, TEXT("espeak-ng-data"));
 		const FString StampFile = FPaths::Combine(DstParent, TEXT(".espeak-data-stamp"));
 
