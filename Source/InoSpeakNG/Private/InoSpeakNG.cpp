@@ -243,39 +243,84 @@ FString FInoSpeakNGModule::ResolveDataParentPath()
 	const TCHAR* Platform = PlatformSubdir();
 	if (!Platform)
 	{
+		UE_LOG(LogInoSpeakNG, Error,
+			TEXT("ResolveDataParentPath: PlatformSubdir() is null on this platform — ")
+			TEXT("InoSpeakNG only supports Win64 + Android."));
 		return FString();
 	}
 
 	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("InoSpeakNG"));
 	if (!Plugin.IsValid())
 	{
+		UE_LOG(LogInoSpeakNG, Error,
+			TEXT("ResolveDataParentPath: IPluginManager couldn't find 'InoSpeakNG' — ")
+			TEXT("plugin not registered with the engine?"));
 		return FString();
 	}
 
 	const FString PluginBase = Plugin->GetBaseDir();
 	IFileManager& FM = IFileManager::Get();
 
-	// 1. Cooked layout: <plugin>/Binaries/<Platform>/espeak-ng-data/
+	UE_LOG(LogInoSpeakNG, Log,
+		TEXT("ResolveDataParentPath: plugin base dir = %s"), *PluginBase);
+
+	// Try every known layout. Log each candidate explicitly so a packaged-
+	// build user can see which paths we probed (and therefore which the
+	// cook should have staged into).
+	auto TryDir = [&FM](const FString& ParentDir, const TCHAR* Label) -> FString
 	{
-		const FString ParentDir   = FPaths::Combine(PluginBase, TEXT("Binaries"), Platform);
-		const FString DataDir     = FPaths::Combine(ParentDir, TEXT("espeak-ng-data"));
-		if (FM.DirectoryExists(*DataDir))
-		{
-			return ParentDir;
-		}
+		const FString DataDir = FPaths::Combine(ParentDir, TEXT("espeak-ng-data"));
+		const bool    bExists = FM.DirectoryExists(*DataDir);
+		UE_LOG(LogInoSpeakNG, Log,
+			TEXT("ResolveDataParentPath: %s candidate '%s' -> %s"),
+			Label, *DataDir, bExists ? TEXT("FOUND") : TEXT("missing"));
+		return bExists ? ParentDir : FString();
+	};
+
+	// 1. Cooked layout: <plugin>/Binaries/<Platform>/espeak-ng-data/
+	if (FString Found = TryDir(
+			FPaths::Combine(PluginBase, TEXT("Binaries"), Platform),
+			TEXT("[cooked]"));
+		!Found.IsEmpty())
+	{
+		return Found;
 	}
 
 	// 2. Dev/editor layout: <plugin>/Source/ThirdParty/<Platform>/espeak-ng-data/
+	if (FString Found = TryDir(
+			FPaths::Combine(PluginBase, TEXT("Source"), TEXT("ThirdParty"), Platform),
+			TEXT("[dev/editor]"));
+		!Found.IsEmpty())
 	{
-		const FString ParentDir = FPaths::Combine(
-			PluginBase, TEXT("Source"), TEXT("ThirdParty"), Platform);
-		const FString DataDir = FPaths::Combine(ParentDir, TEXT("espeak-ng-data"));
-		if (FM.DirectoryExists(*DataDir))
-		{
-			return ParentDir;
-		}
+		return Found;
 	}
 
+	// 3. Cooked alternative: <project>/Binaries/<Platform>/espeak-ng-data/
+	//    Some UE staging configurations flatten plugin Binaries into the
+	//    project's Binaries dir instead of keeping them under each plugin.
+	if (FString Found = TryDir(
+			FPaths::Combine(FPaths::ProjectDir(), TEXT("Binaries"), Platform),
+			TEXT("[project-binaries]"));
+		!Found.IsEmpty())
+	{
+		return Found;
+	}
+
+	// 4. Last-ditch: alongside the executable.
+	if (FString Found = TryDir(
+			FPaths::GetPath(FPlatformProcess::ExecutablePath()),
+			TEXT("[exec-dir]"));
+		!Found.IsEmpty())
+	{
+		return Found;
+	}
+
+	UE_LOG(LogInoSpeakNG, Error,
+		TEXT("ResolveDataParentPath: no candidate layout contained espeak-ng-data. ")
+		TEXT("Cook didn't stage the data tree. Verify Plugins/InoSpeakNG/Source/")
+		TEXT("InoSpeakNG/InoSpeakNG.Build.cs adds the espeak-ng-data RuntimeDependency, ")
+		TEXT("and that the Win64 source dir actually contains the files (run ")
+		TEXT("Plugins/InoSpeakNG/EspeakNG/scripts/setup-windows.ps1 if not)."));
 	return FString();
 #endif
 }
