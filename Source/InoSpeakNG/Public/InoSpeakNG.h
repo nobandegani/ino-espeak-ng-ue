@@ -24,9 +24,11 @@ private:
 	 * Locates the directory that *contains* espeak-ng-data, which is what
 	 * espeak_Initialize wants.
 	 *
-	 * Win64 / desktop layouts try (in order):
+	 * Win64 / Mac (desktop) layouts try (in order):
 	 *   1. Plugin/Binaries/<Platform>/             (cooked / packaged layout)
 	 *   2. Plugin/Source/ThirdParty/<Platform>/    (editor / dev layout)
+	 *   3. Project/Binaries/<Platform>/            (cooked alt — flattened)
+	 *   4. Alongside the executable                (last-ditch)
 	 *
 	 * Android / iOS: the staged data is inside the pak / APK / IPA assets
 	 * which espeak-ng's raw fopen() can't read. On first run the data tree

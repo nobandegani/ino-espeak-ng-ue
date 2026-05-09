@@ -9,12 +9,14 @@
 #     ./setup-ios.sh
 #     ./setup-ios.sh --abi arm64-simulator   # iOS Simulator on Apple Silicon
 #
-# The platform-agnostic espeak-ng-data/ tree is copied once from the Win64
-# build to Source/ThirdParty/IOS/espeak-ng-data/. setup-windows.ps1 must
-# have run at least once first; the data tables are compiled by running
-# espeak-ng-bin at host build time, and that can't be done while
-# cross-compiling for iOS (the produced bin is an iOS arm64 binary the
-# host Mac can't execute under Rosetta either).
+# The platform-agnostic espeak-ng-data/ tree is copied once from a sibling
+# native build (Win64 or Mac) to Source/ThirdParty/IOS/espeak-ng-data/.
+# setup-windows.ps1 OR setup-macos.sh must have run at least once first;
+# the data tables are compiled by running espeak-ng-bin at host build
+# time, and that can't be done while cross-compiling for iOS (the
+# produced bin is an iOS arm64 binary the host Mac can't execute, even
+# under Rosetta). We prefer the Mac source when running on a Mac so a
+# Mac-only workflow doesn't need a Windows checkout to bootstrap.
 #
 # Why static (.a) and not a .framework / .dylib?
 #   - iOS forbids dlopen of arbitrary dylibs; embedded frameworks add
@@ -32,8 +34,9 @@
 #   - CMake 3.13+ on PATH (3.13 is the first to ship a working
 #     CMAKE_SYSTEM_NAME=iOS toolchain)
 #   - setup-windows.ps1 has been run at least once on a Windows host
-#     and the produced espeak-ng-data/ committed (provides the platform-
-#     agnostic phoneme/dict tables)
+#     OR setup-macos.sh has been run on a Mac (either provides the
+#     platform-agnostic phoneme/dict tables — they're identical regardless
+#     of which host generated them)
 #
 # Outputs:
 #   Source/ThirdParty/IOS/<abi>/libespeak-ng.a   (arch-specific static lib)
@@ -93,13 +96,19 @@ BUILD_DIR="$VENDOR_DIR/build-ios-$ABI"
 THIRD_PARTY_DIR="$(cd "$ESPEAKNG_DIR/../Source/ThirdParty" && pwd)"
 
 IOS_OUT_DIR="$THIRD_PARTY_DIR/IOS/$ABI"
-WIN64_DATA_DIR="$THIRD_PARTY_DIR/Win64/espeak-ng-data"
 # espeak-ng-data is platform-agnostic — same dictionaries / phoneme tables
 # work for every iOS arch. Stage at a shared location (IOS/espeak-ng-data/,
 # no arch subdir) so a multi-slice build doesn't duplicate ~3 MB per slice
 # in the staged tree. Build.cs and the runtime extractor both read from
 # this path.
 IOS_DATA_DIR="$THIRD_PARTY_DIR/IOS/espeak-ng-data"
+
+# Source dirs we'll consider as data origins, in preference order. Mac
+# first because the user is already on a Mac to build for iOS — if they
+# also ran setup-macos.sh in the same session, we want to use that fresh
+# data rather than asking for a Windows-side bootstrap.
+MAC_DATA_DIR="$THIRD_PARTY_DIR/Mac/espeak-ng-data"
+WIN64_DATA_DIR="$THIRD_PARTY_DIR/Win64/espeak-ng-data"
 
 echo "espeak-ng 1.52.0 iOS $ABI build"
 echo "  Vendor:       $VENDOR_DIR"
@@ -143,20 +152,31 @@ echo "  Deployment:   iOS $IOS_DEPLOYMENT_TARGET"
 echo
 
 # ---------------------------------------------------------------------------
-# Verify the Win64 data folder exists (we'll copy it as the iOS data)
+# Resolve a data source — Mac preferred, Win64 as fallback
 # ---------------------------------------------------------------------------
-if [[ ! -d "$WIN64_DATA_DIR" ]]; then
-    cat >&2 <<EOM
-ERROR: Win64 espeak-ng-data not found at
-       $WIN64_DATA_DIR
+DATA_SRC_DIR=""
+if [[ -d "$MAC_DATA_DIR" ]]; then
+    DATA_SRC_DIR="$MAC_DATA_DIR"
+elif [[ -d "$WIN64_DATA_DIR" ]]; then
+    DATA_SRC_DIR="$WIN64_DATA_DIR"
+fi
 
-The data tables must be compiled on the host first (espeak-ng-bin can't
-run while cross-compiling for iOS). Run setup-windows.ps1 on a Windows
-host first, commit the produced espeak-ng-data tree, then re-run this
-script on the Mac.
+if [[ -z "$DATA_SRC_DIR" ]]; then
+    cat >&2 <<EOM
+ERROR: no espeak-ng-data found at
+         $MAC_DATA_DIR
+         $WIN64_DATA_DIR
+
+The data tables must be compiled on a host that can execute the just-built
+espeak-ng-bin (an iOS cross-compile produces an arm64 iOS binary the host
+can't run). Pick one and re-run setup-ios.sh:
+  - Mac:     ./setup-macos.sh
+  - Windows: ./setup-windows.ps1   (commit the produced data tree, pull
+                                    on the Mac, then re-run setup-ios.sh)
 EOM
     exit 1
 fi
+echo "  Data source:  $DATA_SRC_DIR"
 
 # ---------------------------------------------------------------------------
 # Clean prior build output (keeps the script idempotent)
@@ -227,11 +247,12 @@ fi
 mkdir -p "$IOS_OUT_DIR"
 cp -f "$LIB_PATH" "$IOS_OUT_DIR/libespeak-ng.a"
 
-# Copy data from the Win64 build (platform-agnostic — same files work on iOS).
+# Copy data from whichever native build is present (the files are
+# platform-agnostic — same dictionaries / phoneme tables work on iOS).
 # Idempotent: replace any pre-existing copy outright.
 rm -rf "$IOS_DATA_DIR"
 mkdir -p "$IOS_DATA_DIR"
-cp -R "$WIN64_DATA_DIR/." "$IOS_DATA_DIR/"
+cp -R "$DATA_SRC_DIR/." "$IOS_DATA_DIR/"
 
 # ---------------------------------------------------------------------------
 # Summary

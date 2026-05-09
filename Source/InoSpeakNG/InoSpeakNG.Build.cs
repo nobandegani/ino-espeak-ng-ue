@@ -26,8 +26,8 @@ public class InoSpeakNG : ModuleRules
 		// espeak-ng third-party integration
 		// -----------------------------------------------------------------
 		// Headers and prebuilt libraries live under Source/ThirdParty/, staged
-		// by EspeakNG/scripts/setup-windows.ps1, setup-android.ps1, and
-		// setup-ios.sh.
+		// by EspeakNG/scripts/setup-windows.ps1, setup-android.ps1,
+		// setup-ios.sh, and setup-macos.sh.
 		//
 		// Layout:
 		//   Source/ThirdParty/Public/espeak-ng/{encoding,espeak_ng,speak_lib}.h
@@ -39,16 +39,20 @@ public class InoSpeakNG : ModuleRules
 		//   Source/ThirdParty/IOS/arm64/libespeak-ng.a            (device)
 		//   Source/ThirdParty/IOS/arm64-simulator/libespeak-ng.a  (optional)
 		//   Source/ThirdParty/IOS/espeak-ng-data/        (shared across slices)
+		//   Source/ThirdParty/Mac/libespeak-ng.a         (universal arm64+x86_64)
+		//   Source/ThirdParty/Mac/espeak-ng-data/
 		//
 		// Companion file in this same module directory:
 		//   InoSpeakNG_UPL_Android.xml   APK packaging directives
 		//
-		// iOS uses static linking (.a) rather than a dylib/framework — iOS
-		// forbids dlopen of arbitrary dylibs, espeak-ng exposes a small C
-		// API directly (no plugin glob-scan), and a static archive avoids
-		// embedded-framework code-signing complexity. Symbols compiled with
-		// -fvisibility=hidden still resolve at link time inside the same
-		// final binary, so the consumer sees espeak_* normally.
+		// iOS / Mac use static linking (.a) rather than a dylib/framework —
+		// iOS forbids dlopen of arbitrary dylibs, espeak-ng exposes a small
+		// C API directly (no plugin glob-scan), and a static archive avoids
+		// dylib loading concerns + embedded-framework code-signing on iOS.
+		// Symbols compiled with -fvisibility=hidden still resolve at link
+		// time inside the same final binary, so the consumer sees espeak_*
+		// normally. Mac stays static (vs. a dylib like Win64) for parity
+		// with iOS — same staging shape, same runtime expectations.
 		// -----------------------------------------------------------------
 		string ThirdPartyDir = Path.Combine(PluginDirectory, "Source", "ThirdParty");
 
@@ -198,6 +202,49 @@ public class InoSpeakNG : ModuleRules
 			// (no audio session category, no entitlements, no usage
 			// descriptions — phonemization is pure CPU work with no system
 			// service calls).
+		}
+		else if (Target.Platform == UnrealTargetPlatform.Mac)
+		{
+			// Mac: link the universal static library produced by
+			// EspeakNG/scripts/setup-macos.sh (default --abi=universal
+			// produces an arm64+x86_64 fat archive that satisfies both
+			// Apple Silicon and Intel UE targets in one file). Single-arch
+			// builds also work — `lipo`-stripping the .a doesn't matter
+			// here because Mac targets pick the matching slice at link
+			// time without any per-arch filtering.
+			//
+			// File.Exists guard keeps configure succeeding when the user
+			// hasn't run setup-macos.sh yet (a clean checkout configures
+			// cleanly; IsAvailable() returns false at runtime if the .a
+			// is missing).
+
+			string MacDir  = Path.Combine(ThirdPartyDir, "Mac");
+			string LibPath = Path.Combine(MacDir, "libespeak-ng.a");
+
+			if (File.Exists(LibPath))
+			{
+				PublicAdditionalLibraries.Add(LibPath);
+				RuntimeDependencies.Add(LibPath);
+			}
+
+			// Stage the runtime data tree as NonUFS so the cooker drops
+			// it into the .app bundle as loose files alongside the binary
+			// (mirrors the Win64 pattern). Mac is desktop-style — no pak
+			// extract step needed at runtime, fopen() reads it directly.
+			//
+			// The "/..." suffix copies the directory recursively. Path
+			// $(BinaryOutputDir) for a Mac plugin module points at the
+			// bundled module location; the runtime probe in
+			// FInoSpeakNGModule::ResolveDataParentPath finds it via the
+			// same Plugin/Binaries/Mac/ candidate the Win64 path uses.
+			string DataDir = Path.Combine(MacDir, "espeak-ng-data");
+			if (Directory.Exists(DataDir))
+			{
+				RuntimeDependencies.Add(
+					"$(BinaryOutputDir)/espeak-ng-data/...",
+					Path.Combine(MacDir, "espeak-ng-data", "..."),
+					StagedFileType.NonUFS);
+			}
 		}
 	}
 }

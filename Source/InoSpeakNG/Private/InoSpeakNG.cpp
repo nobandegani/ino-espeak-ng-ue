@@ -26,6 +26,8 @@ namespace
 	{
 #if PLATFORM_WINDOWS
 		return TEXT("Win64");
+#elif PLATFORM_MAC
+		return TEXT("Mac");
 #elif PLATFORM_ANDROID || PLATFORM_IOS
 		// Android / iOS resolve data via ExtractEspeakDataIfNeeded() rather
 		// than a static plugin-relative path; PlatformSubdir is unused on
@@ -205,7 +207,7 @@ void FInoSpeakNGModule::StartupModule()
 		UE_LOG(LogInoSpeakNG, Error,
 			TEXT("Could not locate espeak-ng-data; phonemizer disabled. ")
 			TEXT("Run EspeakNG/scripts/setup-windows.ps1 (and setup-android.ps1, ")
-			TEXT("setup-ios.sh) under Plugins/InoSpeakNG/."));
+			TEXT("setup-ios.sh, setup-macos.sh) under Plugins/InoSpeakNG/."));
 		return;
 	}
 
@@ -273,7 +275,7 @@ FString FInoSpeakNGModule::ResolveDataParentPath()
 	{
 		UE_LOG(LogInoSpeakNG, Error,
 			TEXT("ResolveDataParentPath: PlatformSubdir() is null on this platform — ")
-			TEXT("InoSpeakNG only supports Win64, Android, and iOS."));
+			TEXT("InoSpeakNG only supports Win64, Mac, Android, and iOS."));
 		return FString();
 	}
 
@@ -347,8 +349,9 @@ FString FInoSpeakNGModule::ResolveDataParentPath()
 		TEXT("ResolveDataParentPath: no candidate layout contained espeak-ng-data. ")
 		TEXT("Cook didn't stage the data tree. Verify Plugins/InoSpeakNG/Source/")
 		TEXT("InoSpeakNG/InoSpeakNG.Build.cs adds the espeak-ng-data RuntimeDependency, ")
-		TEXT("and that the Win64 source dir actually contains the files (run ")
-		TEXT("Plugins/InoSpeakNG/EspeakNG/scripts/setup-windows.ps1 if not)."));
+		TEXT("and that the staged Source/ThirdParty/%s/ dir actually contains the files (run ")
+		TEXT("the matching Plugins/InoSpeakNG/EspeakNG/scripts/setup-*.{ps1,sh} script if not)."),
+		Platform);
 	return FString();
 #endif
 }
