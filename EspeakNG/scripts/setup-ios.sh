@@ -204,6 +204,20 @@ echo "Configuring..."
 #    when bundle style is on. We don't ship espeak-ng-bin on iOS
 #    anyway (the library target is all we need), so flipping the
 #    bundle default off is the cleanest fix.
+#
+#  -DHAVE_SYS_ENDIAN_H — spect.c picks between <sys/endian.h> (when
+#    HAVE_SYS_ENDIAN_H is set) and <endian.h>. The iOS SDK ships a
+#    legacy Carbon header at /usr/include/Endian.h that the case-
+#    insensitive default filesystem also resolves as <endian.h> —
+#    that header doesn't expose le16toh / le32toh, so the build fails
+#    with "call to undeclared function 'le16toh'". The compat shim at
+#    src/include/compat/endian.h tries the system header first via
+#    __has_include_next and gets the broken Carbon one. Forcing
+#    HAVE_SYS_ENDIAN_H short-circuits the compat shim entirely; iOS
+#    <sys/endian.h> does define the le16toh family.
+#    macOS doesn't hit this — its SDK has no top-level endian.h, so
+#    the compat shim correctly falls through to <sys/endian.h> on its
+#    own.
 cmake \
     -S "$VENDOR_DIR" \
     -B "$BUILD_DIR" \
@@ -214,6 +228,7 @@ cmake \
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
     -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO \
     -DCMAKE_MACOSX_BUNDLE=OFF \
+    -DCMAKE_C_FLAGS="-DHAVE_SYS_ENDIAN_H" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF \
     -DUSE_MBROLA=OFF \
