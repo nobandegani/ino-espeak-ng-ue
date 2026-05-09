@@ -28,12 +28,14 @@ private:
 	 *   1. Plugin/Binaries/<Platform>/             (cooked / packaged layout)
 	 *   2. Plugin/Source/ThirdParty/<Platform>/    (editor / dev layout)
 	 *
-	 * Android: the staged data is inside the pak/APK assets which espeak-ng's
-	 * raw fopen() can't read. On first run the data tree is extracted from
-	 * the pak to FPaths::ProjectPersistentDownloadDir()/InoSpeakNG/, which
-	 * is a real filesystem path on /data/data/<pkg>/files/. Subsequent
-	 * launches reuse the extracted copy via a stamp-file check (re-extracts
-	 * automatically when the bundled data version changes).
+	 * Android / iOS: the staged data is inside the pak / APK / IPA assets
+	 * which espeak-ng's raw fopen() can't read. On first run the data tree
+	 * is extracted from the pak to FPaths::ProjectPersistentDownloadDir()/
+	 * ino-speak-ng/ — a real on-device filesystem path
+	 * (/data/data/<pkg>/files/ on Android, the app sandbox's Documents/
+	 * directory on iOS, marked NSURLIsExcludedFromBackupKey by UE).
+	 * Subsequent launches reuse the extracted copy via a stamp-file check
+	 * (re-extracts automatically when the bundled data version changes).
 	 *
 	 * Returns empty string if no usable location was found.
 	 */

@@ -26,16 +26,17 @@ namespace
 	{
 #if PLATFORM_WINDOWS
 		return TEXT("Win64");
-#elif PLATFORM_ANDROID
-		// Android resolves data via ExtractEspeakDataIfNeeded() rather than
-		// a static plugin-relative path; PlatformSubdir is unused on Android.
+#elif PLATFORM_ANDROID || PLATFORM_IOS
+		// Android / iOS resolve data via ExtractEspeakDataIfNeeded() rather
+		// than a static plugin-relative path; PlatformSubdir is unused on
+		// those platforms (the extractor names the source dir directly).
 		return nullptr;
 #else
 		return nullptr;
 #endif
 	}
 
-#if PLATFORM_ANDROID
+#if PLATFORM_ANDROID || PLATFORM_IOS
 	// Bumped when we change the bundled espeak-ng-data (e.g. vendor pin
 	// update). On app upgrade the stamp mismatch triggers re-extraction
 	// so old/new versions can't get crossed. Format is freeform — any
@@ -43,10 +44,28 @@ namespace
 	const TCHAR* kEspeakDataStamp = TEXT("v1.52.0-1");
 
 	/**
+	 * Source-tree subdir under Source/ThirdParty/ that holds the staged
+	 * espeak-ng-data/ for the current platform. Build.cs stages each
+	 * platform's data under its own subdir (Android/, IOS/) — the data
+	 * itself is platform-agnostic, but the staging tree is per-platform
+	 * so cooks for one platform don't pull in the other's files.
+	 */
+	const TCHAR* MobilePlatformSubdir()
+	{
+#if PLATFORM_ANDROID
+		return TEXT("Android");
+#elif PLATFORM_IOS
+		return TEXT("IOS");
+#else
+		return TEXT("");
+#endif
+	}
+
+	/**
 	 * Recursively copy a directory tree using UE's IFileManager. This is
 	 * how we get espeak-ng-data out of the read-only pak/asset filesystem
-	 * and onto a real Android filesystem path that espeak-ng's raw fopen()
-	 * can read. Returns false on any I/O error.
+	 * and onto a real on-device filesystem path that espeak-ng's raw
+	 * fopen() can read. Returns false on any I/O error.
 	 */
 	bool CopyTreeViaFileManager(const FString& SrcDir, const FString& DstDir)
 	{
@@ -87,17 +106,25 @@ namespace
 	}
 
 	/**
-	 * Extract espeak-ng-data from the pak/asset filesystem onto Android's
-	 * filesDir so espeak-ng's raw fopen() can open the dictionaries.
-	 * Idempotent: a stamp file under PersistentDownloadDir/InoSpeakNG/ is
-	 * checked first, and the extraction is skipped if it matches.
+	 * Extract espeak-ng-data from the pak/asset filesystem onto a writable
+	 * on-device path so espeak-ng's raw fopen() can open the dictionaries.
+	 * Idempotent: a stamp file under PersistentDownloadDir/ino-speak-ng/
+	 * is checked first, and the extraction is skipped if it matches.
 	 *
 	 * Returns the parent directory containing espeak-ng-data/ (the form
 	 * espeak_Initialize wants), or empty string on failure.
 	 *
 	 * The source tree is staged by Build.cs's RuntimeDependencies entry
-	 * (UFS) at Plugins/InoSpeakNG/Source/ThirdParty/Android/espeak-ng-data/
-	 * relative to the plugin's base dir.
+	 * (UFS) at Plugins/InoSpeakNG/Source/ThirdParty/<Platform>/espeak-ng-data/
+	 * relative to the plugin's base dir, where <Platform> is "Android" or
+	 * "IOS" (selected by MobilePlatformSubdir).
+	 *
+	 * Why extract on iOS too? The same constraint as Android applies: the
+	 * .ipa's pak file lives at a path espeak-ng's raw fopen() can't read,
+	 * and the iOS app sandbox makes Documents/ the closest writable location
+	 * (FPaths::ProjectPersistentDownloadDir resolves there and excludes the
+	 * tree from iCloud backup automatically — see FIOSPlatformMisc::
+	 * GamePersistentDownloadDir).
 	 */
 	FString ExtractEspeakDataIfNeeded()
 	{
@@ -124,10 +151,10 @@ namespace
 		}
 
 		// Locate the source. Build.cs stages the tree at
-		// <plugin>/Source/ThirdParty/Android/espeak-ng-data/ (no arch subdir
-		// — the data is platform-agnostic). UE's IFileManager wraps the
-		// pak / asset filesystem so this path resolves transparently
-		// regardless of how Android's installer packed the files.
+		// <plugin>/Source/ThirdParty/<Platform>/espeak-ng-data/ (no arch
+		// subdir — the data is platform-agnostic). UE's IFileManager wraps
+		// the pak / asset filesystem so this path resolves transparently
+		// regardless of how the platform installer packed the files.
 		TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("InoSpeakNG"));
 		if (!Plugin.IsValid())
 		{
@@ -138,7 +165,7 @@ namespace
 		const FString SrcData = FPaths::Combine(
 			Plugin->GetBaseDir(),
 			TEXT("Source"), TEXT("ThirdParty"),
-			TEXT("Android"),
+			MobilePlatformSubdir(),
 			TEXT("espeak-ng-data"));
 
 		UE_LOG(LogInoSpeakNG, Log,
@@ -167,7 +194,7 @@ namespace
 			TEXT("espeak-ng-data extraction complete; parent=%s"), *DstParent);
 		return DstParent;
 	}
-#endif  // PLATFORM_ANDROID
+#endif  // PLATFORM_ANDROID || PLATFORM_IOS
 }
 
 void FInoSpeakNGModule::StartupModule()
@@ -177,8 +204,8 @@ void FInoSpeakNGModule::StartupModule()
 	{
 		UE_LOG(LogInoSpeakNG, Error,
 			TEXT("Could not locate espeak-ng-data; phonemizer disabled. ")
-			TEXT("Run EspeakNG/scripts/setup-windows.ps1 (and setup-android.ps1) ")
-			TEXT("under Plugins/InoSpeakNG/."));
+			TEXT("Run EspeakNG/scripts/setup-windows.ps1 (and setup-android.ps1, ")
+			TEXT("setup-ios.sh) under Plugins/InoSpeakNG/."));
 		return;
 	}
 
@@ -233,11 +260,12 @@ FString FInoSpeakNGModule::GetDataParentPath()
 
 FString FInoSpeakNGModule::ResolveDataParentPath()
 {
-#if PLATFORM_ANDROID
-	// On Android the data lives inside the pak / APK assets, which
-	// espeak-ng's raw fopen() can't read. Extract once on first run
-	// to FPaths::ProjectPersistentDownloadDir() (a real filesystem
-	// path on /data/data/<pkg>/files/) and use that going forward.
+#if PLATFORM_ANDROID || PLATFORM_IOS
+	// On Android / iOS the data lives inside the pak / APK / IPA assets,
+	// which espeak-ng's raw fopen() can't read. Extract once on first run
+	// to FPaths::ProjectPersistentDownloadDir() (a real filesystem path —
+	// /data/data/<pkg>/files/ on Android, the app sandbox's Documents/
+	// on iOS) and use that going forward.
 	return ExtractEspeakDataIfNeeded();
 #else
 	const TCHAR* Platform = PlatformSubdir();
@@ -245,7 +273,7 @@ FString FInoSpeakNGModule::ResolveDataParentPath()
 	{
 		UE_LOG(LogInoSpeakNG, Error,
 			TEXT("ResolveDataParentPath: PlatformSubdir() is null on this platform — ")
-			TEXT("InoSpeakNG only supports Win64 + Android."));
+			TEXT("InoSpeakNG only supports Win64, Android, and iOS."));
 		return FString();
 	}
 

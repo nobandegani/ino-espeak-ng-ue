@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts must always use LF line endings — bash on macOS / Linux
+# treats CRLF as part of the shebang and fails with
+# "bad interpreter: /usr/bin/env bash\r: no such file or directory".
+*.sh text eol=lf

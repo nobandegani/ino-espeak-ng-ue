@@ -26,7 +26,8 @@ public class InoSpeakNG : ModuleRules
 		// espeak-ng third-party integration
 		// -----------------------------------------------------------------
 		// Headers and prebuilt libraries live under Source/ThirdParty/, staged
-		// by EspeakNG/scripts/setup-windows.ps1 and setup-android.ps1.
+		// by EspeakNG/scripts/setup-windows.ps1, setup-android.ps1, and
+		// setup-ios.sh.
 		//
 		// Layout:
 		//   Source/ThirdParty/Public/espeak-ng/{encoding,espeak_ng,speak_lib}.h
@@ -35,9 +36,19 @@ public class InoSpeakNG : ModuleRules
 		//   Source/ThirdParty/Android/arm64-v8a/libespeak-ng.so
 		//   Source/ThirdParty/Android/x86_64/libespeak-ng.so
 		//   Source/ThirdParty/Android/espeak-ng-data/   (shared across arches)
+		//   Source/ThirdParty/IOS/arm64/libespeak-ng.a            (device)
+		//   Source/ThirdParty/IOS/arm64-simulator/libespeak-ng.a  (optional)
+		//   Source/ThirdParty/IOS/espeak-ng-data/        (shared across slices)
 		//
 		// Companion file in this same module directory:
 		//   InoSpeakNG_UPL_Android.xml   APK packaging directives
+		//
+		// iOS uses static linking (.a) rather than a dylib/framework — iOS
+		// forbids dlopen of arbitrary dylibs, espeak-ng exposes a small C
+		// API directly (no plugin glob-scan), and a static archive avoids
+		// embedded-framework code-signing complexity. Symbols compiled with
+		// -fvisibility=hidden still resolve at link time inside the same
+		// final binary, so the consumer sees espeak_* normally.
 		// -----------------------------------------------------------------
 		string ThirdPartyDir = Path.Combine(PluginDirectory, "Source", "ThirdParty");
 
@@ -129,6 +140,64 @@ public class InoSpeakNG : ModuleRules
 			AdditionalPropertiesForReceipt.Add(
 				"AndroidPlugin",
 				Path.Combine(ModuleDirectory, "InoSpeakNG_UPL_Android.xml"));
+		}
+		else if (Target.Platform == UnrealTargetPlatform.IOS)
+		{
+			// iOS: link the static library produced by EspeakNG/scripts/
+			// setup-ios.sh. Build.cs only consumes the arm64 device slice;
+			// the script can also produce arm64-simulator under
+			// Source/ThirdParty/IOS/arm64-simulator/ but that slice has to
+			// be wired in manually (UE 5.7's Simulator target needs an
+			// extra DependenciesToSkipPerArchitecture entry to keep the
+			// device .a out of the simulator link, and we don't ship a
+			// Simulator target by default).
+			//
+			// File.Exists guard keeps the configure step succeeding when
+			// the developer hasn't run setup-ios.sh yet (cross-platform
+			// devs on Windows have to do all iOS work on a Mac). In that
+			// case the build still produces a valid InoSpeakNG module —
+			// it just has no espeak symbols to call, and IsAvailable()
+			// returns false at runtime.
+
+			string IOSBaseDir = Path.Combine(ThirdPartyDir, "IOS");
+			string Arm64Dir   = Path.Combine(IOSBaseDir, "arm64");
+			string LibPath    = Path.Combine(Arm64Dir, "libespeak-ng.a");
+
+			if (File.Exists(LibPath))
+			{
+				// PublicAdditionalLibraries pulls the .a's object code
+				// into the final iOS executable at link time. No DT_NEEDED
+				// entry is created (it's not a dylib), so there's nothing
+				// for the dynamic linker to resolve at launch — symbols
+				// are baked in.
+				PublicAdditionalLibraries.Add(LibPath);
+				RuntimeDependencies.Add(LibPath);
+			}
+
+			// Stage the espeak-ng-data tree as UFS so it goes into the
+			// game's pak file. iOS apps run in a sandbox where the .app
+			// bundle is read-only and pak files live under a path that
+			// espeak-ng's raw fopen() can't read. On first run our
+			// StartupModule extracts the tree to FPaths::ProjectPersistent-
+			// DownloadDir() (a writable path under the app's Documents
+			// folder, marked NSURLIsExcludedFromBackupKey) so espeak_Init
+			// can fopen() the dictionaries normally.
+			//
+			// Single shared copy (not per-slice) because the data files
+			// are platform-agnostic — same dictionaries / phoneme tables
+			// work for every iOS slice. See setup-ios.sh's $IOS_DATA_DIR.
+			string IOSDataDir = Path.Combine(IOSBaseDir, "espeak-ng-data");
+			if (Directory.Exists(IOSDataDir))
+			{
+				RuntimeDependencies.Add(
+					Path.Combine(IOSBaseDir, "espeak-ng-data", "..."),
+					StagedFileType.UFS);
+			}
+
+			// No IPL XML needed: espeak-ng requires no Info.plist additions
+			// (no audio session category, no entitlements, no usage
+			// descriptions — phonemization is pure CPU work with no system
+			// service calls).
 		}
 	}
 }
