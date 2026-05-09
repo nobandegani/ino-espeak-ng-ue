@@ -164,14 +164,36 @@ cmake --build "$BUILD_DIR" --config Release --parallel
 
 # ---------------------------------------------------------------------------
 # Stage outputs
+#
+# espeak-ng's static build produces three separate archives:
+#   libespeak-ng.a        — the main library
+#   libucd.a              — Unicode character DB helpers (ucd-tools/)
+#   libspeechPlayer.a     — Klatt-style speech synthesizer (speechPlayer/)
+# libespeak-ng.a calls into the other two, but their object files are
+# NOT inside it. We merge them with `libtool -static` so UE only has to
+# link one library and won't hit "Undefined symbols: _ucd_*,
+# _speechPlayer_*" at the final link step.
 # ---------------------------------------------------------------------------
 echo
 echo "Staging artifacts..."
 
-LIB_PATH="$(find "$BUILD_DIR" -name "libespeak-ng.a" -type f | head -n 1 || true)"
-if [[ -z "$LIB_PATH" ]]; then
+ESPEAK_NG_LIB="$(find "$BUILD_DIR" -name "libespeak-ng.a"     -type f | head -n 1 || true)"
+UCD_LIB="$(       find "$BUILD_DIR" -name "libucd.a"          -type f | head -n 1 || true)"
+SPLAYER_LIB="$(   find "$BUILD_DIR" -name "libspeechPlayer.a" -type f | head -n 1 || true)"
+
+if [[ -z "$ESPEAK_NG_LIB" ]]; then
     echo "ERROR: built libespeak-ng.a not found under $BUILD_DIR" >&2
     exit 1
+fi
+if [[ -z "$UCD_LIB" ]]; then
+    echo "ERROR: built libucd.a not found under $BUILD_DIR" >&2
+    exit 1
+fi
+# libspeechPlayer.a is conditional on USE_SPEECHPLAYER (ON by default).
+# Only merge it when actually present.
+MERGE_INPUTS=("$ESPEAK_NG_LIB" "$UCD_LIB")
+if [[ -n "$SPLAYER_LIB" ]]; then
+    MERGE_INPUTS+=("$SPLAYER_LIB")
 fi
 
 BUILT_DATA_DIR="$BUILD_DIR/espeak-ng-data"
@@ -181,7 +203,13 @@ if [[ ! -d "$BUILT_DATA_DIR" ]]; then
 fi
 
 mkdir -p "$MAC_OUT_DIR"
-cp -f "$LIB_PATH" "$MAC_OUT_DIR/libespeak-ng.a"
+MERGED_LIB="$MAC_OUT_DIR/libespeak-ng.a"
+
+echo "  Merging:"
+for L in "${MERGE_INPUTS[@]}"; do echo "    $L"; done
+echo "  -> $MERGED_LIB"
+rm -f "$MERGED_LIB"
+libtool -static -o "$MERGED_LIB" "${MERGE_INPUTS[@]}"
 
 # Replace any pre-existing staged data folder with the freshly compiled one
 rm -rf "$MAC_DATA_DIR"

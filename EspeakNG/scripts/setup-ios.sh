@@ -239,16 +239,22 @@ cmake \
     -DBUILD_TESTING=OFF
 
 # ---------------------------------------------------------------------------
-# Build ONLY the espeak-ng library target.
+# Build the espeak-ng library target plus its sibling static archives
+# (libucd, libspeechPlayer). With BUILD_SHARED_LIBS=OFF, CMake produces
+# three separate .a files — libespeak-ng.a calls into the other two but
+# their object files are NOT inside libespeak-ng.a. We merge them below
+# into a single fat archive so UE only has to link one library.
 #
-# Same reason as the Android build: the default `all` target tries to run
-# espeak-ng-bin (the just-built CLI) to compile phoneme tables — and that's
-# an iOS arm64 binary the host Mac can't execute. We use the Win64-built
-# data tree instead.
+# Same reason as the Android build for skipping the default `all` target:
+# `all` tries to run espeak-ng-bin (the just-built CLI) to compile phoneme
+# tables, and that's an iOS arm64 binary the host Mac can't execute. We
+# use a sibling native build (Mac/Win64) for the data tree instead.
 # ---------------------------------------------------------------------------
 echo
-echo "Building (espeak-ng target only)..."
-cmake --build "$BUILD_DIR" --config Release --target espeak-ng --parallel
+echo "Building (espeak-ng + ucd + speechPlayer targets)..."
+cmake --build "$BUILD_DIR" --config Release --target espeak-ng     --parallel
+cmake --build "$BUILD_DIR" --config Release --target ucd           --parallel
+cmake --build "$BUILD_DIR" --config Release --target speechPlayer  --parallel
 
 # ---------------------------------------------------------------------------
 # Stage outputs
@@ -256,19 +262,46 @@ cmake --build "$BUILD_DIR" --config Release --target espeak-ng --parallel
 echo
 echo "Staging artifacts..."
 
-# Locate the produced .a anywhere under the build dir. With the Xcode
-# generator the path is typically
+# Locate the produced .a files anywhere under the build dir. With the
+# Xcode generator the paths are typically
 #     build-ios-arm64/src/libespeak-ng/Release-iphoneos/libespeak-ng.a
+#     build-ios-arm64/src/ucd-tools/src/Release-iphoneos/libucd.a
+#     build-ios-arm64/src/speechPlayer/Release-iphoneos/libspeechPlayer.a
 # but we don't hardcode the layout — find lets us absorb future CMake /
 # Xcode generator changes.
-LIB_PATH="$(find "$BUILD_DIR" -name "libespeak-ng.a" -type f | head -n 1 || true)"
-if [[ -z "$LIB_PATH" ]]; then
+ESPEAK_NG_LIB="$(find "$BUILD_DIR" -name "libespeak-ng.a"     -type f | head -n 1 || true)"
+UCD_LIB="$(       find "$BUILD_DIR" -name "libucd.a"          -type f | head -n 1 || true)"
+SPLAYER_LIB="$(   find "$BUILD_DIR" -name "libspeechPlayer.a" -type f | head -n 1 || true)"
+
+if [[ -z "$ESPEAK_NG_LIB" ]]; then
     echo "ERROR: built libespeak-ng.a not found under $BUILD_DIR" >&2
     exit 1
 fi
+if [[ -z "$UCD_LIB" ]]; then
+    echo "ERROR: built libucd.a not found under $BUILD_DIR" >&2
+    exit 1
+fi
+# libspeechPlayer.a is conditional on USE_SPEECHPLAYER, which is ON by
+# default. If it's missing, we just don't merge it in — the espeak-ng
+# library will only reference it when sPlayer.c was compiled in
+# (USE_SPEECHPLAYER=ON), and that compile is what creates the .a in the
+# first place, so its presence/absence is consistent with the symbols.
+MERGE_INPUTS=("$ESPEAK_NG_LIB" "$UCD_LIB")
+if [[ -n "$SPLAYER_LIB" ]]; then
+    MERGE_INPUTS+=("$SPLAYER_LIB")
+fi
 
 mkdir -p "$IOS_OUT_DIR"
-cp -f "$LIB_PATH" "$IOS_OUT_DIR/libespeak-ng.a"
+MERGED_LIB="$IOS_OUT_DIR/libespeak-ng.a"
+
+# Merge with libtool -static: takes any number of input .a files and
+# produces one .a containing every object from every input. macOS native
+# (Xcode CLT ships it), idempotent (we always overwrite the dest).
+echo "  Merging:"
+for L in "${MERGE_INPUTS[@]}"; do echo "    $L"; done
+echo "  -> $MERGED_LIB"
+rm -f "$MERGED_LIB"
+libtool -static -o "$MERGED_LIB" "${MERGE_INPUTS[@]}"
 
 # Copy data from whichever native build is present (the files are
 # platform-agnostic — same dictionaries / phoneme tables work on iOS).
