@@ -213,8 +213,20 @@ void FInoSpeakNGModule::StartupModule()
 
 	UE_LOG(LogInoSpeakNG, Log, TEXT("espeak-ng data root: %s"), *ParentPath);
 
+	// UE's relative-path convention ("../../../Project/...") is fine for
+	// IFileManager, but espeak-ng's raw fopen() can't resolve it — the
+	// process cwd doesn't line up with UE's virtual root, especially on
+	// iOS / Android where the working directory is platform-defined.
+	// ConvertToAbsolutePathForExternalAppForRead is idempotent on paths
+	// that are already absolute, so applying it unconditionally costs
+	// nothing on Win64 / Mac while fixing iOS + (defensively) Android.
+	const FString AbsoluteParentPath =
+		IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*ParentPath);
+	UE_LOG(LogInoSpeakNG, Log,
+		TEXT("espeak-ng data root (absolute, for fopen): %s"), *AbsoluteParentPath);
+
 	// espeak_Initialize wants ANSI; convert from TCHAR.
-	const FTCHARToUTF8 PathUtf8(*ParentPath);
+	const FTCHARToUTF8 PathUtf8(*AbsoluteParentPath);
 
 	// AUDIO_OUTPUT_RETRIEVAL means "no audio device, no synchronous playback" —
 	// we only ever call espeak_TextToPhonemes, never espeak_Synth, so nothing
@@ -234,7 +246,7 @@ void FInoSpeakNGModule::StartupModule()
 	}
 
 	gIsInitialized = true;
-	gDataParentPath = ParentPath;
+	gDataParentPath = AbsoluteParentPath;
 	UE_LOG(LogInoSpeakNG, Log,
 		TEXT("espeak-ng initialized; internal sample rate %d Hz."), SampleRate);
 }
