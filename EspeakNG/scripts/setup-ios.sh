@@ -197,6 +197,13 @@ fi
 # ---------------------------------------------------------------------------
 echo "Configuring..."
 
+#  CMAKE_MACOSX_BUNDLE=OFF — on iOS, CMake defaults executables to
+#    Application Bundle style (.app + Info.plist). espeak-ng's
+#    src/CMakeLists.txt:34 runs `install(TARGETS espeak-ng-bin)`
+#    without a BUNDLE DESTINATION, which fails the configure step
+#    when bundle style is on. We don't ship espeak-ng-bin on iOS
+#    anyway (the library target is all we need), so flipping the
+#    bundle default off is the cleanest fix.
 cmake \
     -S "$VENDOR_DIR" \
     -B "$BUILD_DIR" \
@@ -206,6 +213,7 @@ cmake \
     -DCMAKE_OSX_ARCHITECTURES="$OSX_ARCH" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
     -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO \
+    -DCMAKE_MACOSX_BUNDLE=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF \
     -DUSE_MBROLA=OFF \
