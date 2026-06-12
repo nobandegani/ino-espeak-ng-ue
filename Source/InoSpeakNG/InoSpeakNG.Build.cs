@@ -173,9 +173,11 @@ public class InoSpeakNG : ModuleRules
 				// into the final iOS executable at link time. No DT_NEEDED
 				// entry is created (it's not a dylib), so there's nothing
 				// for the dynamic linker to resolve at launch — symbols
-				// are baked in.
+				// are baked in. Do NOT add the .a to RuntimeDependencies:
+				// that stages it into the .app bundle, and App Store
+				// validation rejects bundles containing standalone
+				// libraries ("Invalid bundle structure").
 				PublicAdditionalLibraries.Add(LibPath);
-				RuntimeDependencies.Add(LibPath);
 			}
 
 			// Stage the espeak-ng-data tree as UFS so it goes into the
@@ -223,8 +225,9 @@ public class InoSpeakNG : ModuleRules
 
 			if (File.Exists(LibPath))
 			{
+				// Link-time only — staging the .a would trip the same
+				// App Store / notarization bundle-structure check as iOS.
 				PublicAdditionalLibraries.Add(LibPath);
-				RuntimeDependencies.Add(LibPath);
 			}
 
 			// Stage the runtime data tree as NonUFS so the cooker drops
