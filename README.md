@@ -59,7 +59,14 @@ Around 100 languages are supported. The language code is an eSpeak voice name (`
 - Per-platform native toolchain to build eSpeak NG once — see
   [Build the native library](#build-the-native-library)
 
-Prebuilt libraries for Win64, Android, iOS and Mac are committed under `Source/ThirdParty/`, so
+> **⚠️ Android is the exception: its libraries are not committed.** The previously committed
+> `libespeak-ng.so` files embedded absolute build paths (espeak-ng's assert macros expand
+> `__FILE__`, and a Release build keeps them), so they were removed. **Run
+> `EspeakNG/scripts/setup-android.ps1` to rebuild them** — the script now passes
+> `-ffile-prefix-map`, so the result is clean. `Build.cs` guards the path with `File.Exists`, so
+> until you do, the plugin still compiles and `IsAvailable()` simply returns `false` on Android.
+
+Prebuilt libraries for Win64, iOS and Mac are committed under `Source/ThirdParty/`, so
 for those platforms a clean checkout builds without running anything. Rebuild only when you
 want to move the eSpeak NG pin.
 

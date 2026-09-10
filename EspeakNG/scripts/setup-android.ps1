@@ -210,6 +210,23 @@ $cmakeArgs = @(
     "-DANDROID_PLATFORM=android-$AndroidApi",
     "-DANDROID_STL=$AndroidStl",
     "-DCMAKE_BUILD_TYPE=Release",
+    # Strip absolute build paths out of the produced .so.
+    #
+    # espeak-ng's assert/error macros expand __FILE__, and a Release build
+    # does not remove them, so without a prefix map every __FILE__ becomes
+    # this machine's absolute path. The shipped library then carries the
+    # builder's directory layout -- and therefore their OS username and any
+    # internal project naming -- into every consuming game. The previously
+    # committed libespeak-ng.so embedded 37 such paths.
+    #
+    # -ffile-prefix-map rewrites __FILE__, debug info and profiling paths
+    # together. Both the vendored source dir and the build dir are mapped to
+    # short relative stems so assertion text stays readable.
+    #
+    # Win64 / Mac / iOS are built from the same source tree, so if you add a
+    # platform, carry these two flags across to it.
+    "-DCMAKE_C_FLAGS=-ffile-prefix-map=$VendorDir=espeak-ng -ffile-prefix-map=$BuildDir=build",
+    "-DCMAKE_CXX_FLAGS=-ffile-prefix-map=$VendorDir=espeak-ng -ffile-prefix-map=$BuildDir=build",
     "-DBUILD_SHARED_LIBS=ON",
     "-DUSE_MBROLA=OFF",
     "-DUSE_LIBSONIC=OFF",
