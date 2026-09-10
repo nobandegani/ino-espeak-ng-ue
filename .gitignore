@@ -1,21 +1,41 @@
-Binaries/Win64
-Binaries/Android
-Binaries/Mac
-Binaries/IOS
-Intermediate
+# ---------------------------------------------------------------------------
+# Unreal build output
+# ---------------------------------------------------------------------------
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
 
-# Local model files (gigabytes; never committed). The plugin locates models
-# relative to its install directory via IPluginManager::FindPlugin("InoAgents")
-# + "Models/<filename>". Developers download models here manually; they are
-# not redistributed with the plugin.
-Models/
+# ---------------------------------------------------------------------------
+# espeak-ng build workspaces
+# ---------------------------------------------------------------------------
+# The setup-* scripts configure CMake inside the submodule. Their build trees
+# are disposable — the staged artifacts under Source/ThirdParty/ are what the
+# plugin actually consumes, and those ARE tracked (see README → Licensing for
+# why the corresponding source submodule must stay alongside them).
+EspeakNG/vendor/build-*/
+EspeakNG/vendor/build/
 
-# Bazel build workspace (defensive; real bazel-* symlinks live inside the submodule)
-#LiteRtLm/bazel-*
-#LiteRtLm/user.bazelrc
+# ---------------------------------------------------------------------------
+# IDE / editor / per-developer tool state
+# ---------------------------------------------------------------------------
+.vs/
+.idea/
+*.sln
+*.suo
+*.VC.db
+*.opensdf
+*.sdf
+*.iml
+*.iws
 
-# Staged LiteRT-LM artifacts (produced by LiteRtLm/scripts/build-win64.ps1, not tracked)
-#Source/ThirdParty/InoAgentsLibrary/Public/litert/
-#Source/ThirdParty/InoAgentsLibrary/Win64/LiteRtLm.lib
+# Claude Code per-developer permission grants — machine-specific local paths,
+# intentionally not shared.
+.claude/settings.local.json
 
-Chatterbox/LiteRT/*
+# ---------------------------------------------------------------------------
+# OS cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
